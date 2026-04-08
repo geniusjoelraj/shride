@@ -18,25 +18,30 @@
 
 *(Replace the placeholder links below with your actual screenshot images once uploaded!)*
 
-### 1. Home / Dashboard
-> Explore the map and launch right into searching or creating a ride.
-![Home Screen](docs/screenshots/home.png)
+### 1. Home / Dashboard<p align="center">
+  <img src="https://github.com/user-attachments/assets/32b69c30-48e7-47f6-8b3b-c1647b794a1c" alt="Home page" width="32%">
+  <img src="https://github.com/user-attachments/assets/b6671e85-6722-43ca-a5d8-993c2f15a890" alt="Home page" width="32%">
+  <img src="https://github.com/user-attachments/assets/866756cd-e4d3-4359-a210-6475e5cdf384" alt="Home page" width="32%">
+</p>
 
-### 2. Search & Filters
-> Find the perfect ride using detailed preferences, date, and status filters.
-![Search & Filters](docs/screenshots/search.png)
+### 2. Search Filter and Location Pickers
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/0c0d7203-b75a-4e59-b0cf-1946568ba2e2" alt="Search page" width="49%">
+  <img src="https://github.com/user-attachments/assets/8a82fe41-6b39-4440-a4f5-eab4736669fa" alt="Search page" width="49%">
+</p>
 
-### 3. Location Picker
-> A sleek map-pin interface to quickly pinpoint the exact pickup or drop-off spot without fuss.
-![Location Picker](docs/screenshots/location_picker.png)
 
-### 4. My Rides Lifecycle
-> View open, in-progress, completed, and cancelled rides in dedicated driver or passenger views.
-![My Rides Management](docs/screenshots/my_rides.png)
+### 3. My Rides Lifecycle
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/913674f6-513b-469e-b2c1-0e2ad85e75ec" alt="Search page" width="49%">
+  <img src="https://github.com/user-attachments/assets/62f46d75-1345-46fd-a056-bbe414692495" alt="Search page" width="49%">
+</p>
 
 ### 5. Profile & Ratings
-> Leave reviews and check out verified driver scoreboards.
-![Profile & Ratings](docs/screenshots/profile_ratings.png)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/6ab85fd3-e812-4dce-b26e-c084b6c0a4c3" alt="Profile & Ratings" width="49%">
+  <img src="https://github.com/user-attachments/assets/3eee4994-728b-4d81-a02b-e8bf40b902c7" alt="Profile & Ratings" width="49%">
+</p>
 
 ---
 
