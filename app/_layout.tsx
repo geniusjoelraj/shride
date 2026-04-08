@@ -1,24 +1,75 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { LocationProvider } from "@/contexts/LocationContext";
+import { Stack, useRouter, useSegments } from "expo-router";
+import { useEffect } from "react";
+import "./globals.css";
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+function RootLayoutNav() {
+  const { session, loading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+  useEffect(() => {
+    if (loading) return;
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
+    const inAuthGroup = segments[0] === "auth";
+
+    if (!session && !inAuthGroup) {
+      router.replace("/auth/sign-in");
+    } else if (session && inAuthGroup) {
+      router.replace("/(tabs)");
+    }
+  }, [session, loading, segments]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack>
+      <Stack.Screen
+        name="(tabs)"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="auth/sign-in"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="auth/sign-up"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="location-picker"
+        options={{
+          headerShown: false,
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen
+        name="create-ride"
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="rides/[id]"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="profile/[id]"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="my-reviews"
+        options={{ headerShown: false }}
+      />
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <LocationProvider>
+        <RootLayoutNav />
+      </LocationProvider>
+    </AuthProvider>
   );
 }
