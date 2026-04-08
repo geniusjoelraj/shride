@@ -87,4 +87,4 @@ npx eas build -p android --profile preview
 
 ---
 
-*Built with ❤️.*
+*Built with 🤖.*
