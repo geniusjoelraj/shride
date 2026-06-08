@@ -70,45 +70,45 @@ Shride addresses both limitations by implementing **trajectory-aware corridor ma
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        CLIENT (React Native / Expo)                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │
-│  │  Map Engine   │  │  Location    │  │  Haversine Verifier      │  │
-│  │  (Google Maps)│  │  Context     │  │  (Client-side spatial    │  │
-│  │              │  │              │  │   matching + ranking)    │  │
-│  └──────┬───────┘  └──────┬───────┘  └────────────┬─────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐   │
+│  │  Map Engine  │  │  Location    │  │  Haversine Verifier      │   │
+│  │ (Google Maps)│  │  Context     │  │  (Client-side spatial    │   │
+│  │              │  │              │  │   matching + ranking)    │   │
+│  └──────┬───────┘  └──────┬───────┘  └────────────┬─────────────┘   │
 │         │                 │                       │                 │
 │  ┌──────┴─────────────────┴───────────────────────┴──────────────┐  │
-│  │                  Polyline Decoder (utils/polyline.ts)          │  │
-│  │         Google Encoded Polyline → GeoJSON [lng, lat]          │  │
+│  │            Polyline Decoder (utils/polyline.ts)               │  │
+│  │          Google Encoded Polyline → GeoJSON [lng, lat]         │  │
 │  └───────────────────────────┬───────────────────────────────────┘  │
 └──────────────────────────────┼──────────────────────────────────────┘
                                │ HTTPS / WebSocket
 ┌──────────────────────────────┼──────────────────────────────────────┐
-│                        BACKEND (Supabase)                          │
+│                        BACKEND (Supabase)                           │
 │  ┌───────────────────────────┴───────────────────────────────────┐  │
-│  │                    PostgreSQL + PostGIS                        │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐  │  │
-│  │  │ find_compatible_ │  │ GIST Spatial    │  │ Row-Level    │  │  │
-│  │  │ rides() RPC      │  │ Index           │  │ Security     │  │  │
-│  │  │ (Route Corridor) │  │ (route_geom)    │  │ (All Tables) │  │  │
-│  │  └─────────────────┘  └─────────────────┘  └──────────────┘  │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐                    │  │
-│  │  │ Auto-Rating     │  │ Auto-Profile    │                    │  │
-│  │  │ Trigger         │  │ Creation Trigger│                    │  │
-│  │  └─────────────────┘  └─────────────────┘                    │  │
+│  │                    PostgreSQL + PostGIS                       │  │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐   │  │
+│  │  │ find_compatible_│  │ GIST Spatial    │  │ Row-Level    │   │  │
+│  │  │ rides() RPC     │  │ Index           │  │ Security     │   │  │
+│  │  │ (Route Corridor)│  │ (route_geom)    │  │ (All Tables) │   │  │
+│  │  └─────────────────┘  └─────────────────┘  └──────────────┘   │  │
+│  │  ┌─────────────────┐  ┌─────────────────┐                     │  │
+│  │  │ Auto-Rating     │  │ Auto-Profile    │                     │  │
+│  │  │ Trigger         │  │ Creation Trigger│                     │  │
+│  │  └─────────────────┘  └─────────────────┘                     │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │              Auth (JWT) + Secure Token Storage                │  │
 │  └───────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────┘
                                │
 ┌──────────────────────────────┼──────────────────────────────────────┐
-│                   EXTERNAL SERVICES                                │
-│  ┌─────────────────┐  ┌─────────────────┐                         │
-│  │ Google Directions│  │ Google Places   │                         │
-│  │ API (Routes +   │  │ Autocomplete    │                         │
-│  │ Traffic Data)   │  │                 │                         │
-│  └─────────────────┘  └─────────────────┘                         │
-└────────────────────────────────────────────────────────────────────┘
+│                   EXTERNAL SERVICES                                 │
+│  ┌───────────────────┐  ┌─────────────────┐                         │
+│  │ Google Directions │  │ Google Places   │                         │
+│  │ API (Routes +     │  │ Autocomplete    │                         │
+│  │ Traffic Data)     │  │                 │                         │
+│  └───────────────────┘  └─────────────────┘                         │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -151,7 +151,7 @@ The search system implements a **cascading spatial filter** for maximum compatib
 ```
 ┌──────────────────────────────────────────────────────┐
 │  LAYER 1: Server-Side PostGIS (find_compatible_rides)│
-│  ─ ST_DWithin spatial pre-filter (GIST-accelerated) │
+│  ─ ST_DWithin spatial pre-filter (GIST-accelerated)  │
 │  ─ ST_LineLocatePoint directionality check           │
 │  ─ Time window, seat availability, status filters    │
 └──────────────────────┬───────────────────────────────┘
@@ -159,15 +159,15 @@ The search system implements a **cascading spatial filter** for maximum compatib
 ┌──────────────────────────────────────────────────────┐
 │  LAYER 2: Client-Side Haversine Verification         │
 │  ─ Iterate decoded polyline coordinates              │
-│  ─ Find nearest point to pickup                     │
-│  ─ Search ONLY after pickup index for dropoff       │
+│  ─ Find nearest point to pickup                      │
+│  ─ Search ONLY after pickup index for dropoff        │
 │  ─ Rank by combined deviation (pickupDist + dropDist)│
 └──────────────────────┬───────────────────────────────┘
                        ▼
 ┌──────────────────────────────────────────────────────┐
 │  FALLBACK: Origin-Destination Proximity              │
 │  ─ For rides without stored route geometry           │
-│  ─ Simple Haversine radius check on endpoints       │
+│  ─ Simple Haversine radius check on endpoints        │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -234,26 +234,26 @@ Price per Person = round₅(Adjusted Price ÷ (seats + 1))
 ### Entity-Relationship Model
 
 ```
-┌──────────┐       1:N        ┌──────────┐       N:M        ┌──────────┐
-│ profiles │◄────────────────│  rides    │────────────────►│ profiles │
-│          │  (driver_id)     │          │ (ride_passengers)│(passenger)│
-│ • rating │                  │ • route_ │                  │          │
-│ • gender │                  │   geom   │                  │          │
-│ • prefs  │                  │ • status │                  │          │
-│ (JSONB)  │                  │ • prefs  │                  │          │
-└──────┬───┘                  │ (JSONB)  │                  └──────────┘
+┌──────────┐       1:N        ┌──────────┐       N:M       ┌────────────────────────────────┐
+│ profiles │◄──────────────── │  rides   │────────────────►│ profiles                       │
+│          │  (driver_id)     │          │                 │ (ride_passengers)│(passenger)  │
+│ • rating │                  │ • route_ │                 └────────────────────────────────┘
+│ • gender │                  │   geom   │                 
+│ • prefs  │                  │ • status │                 
+│ (JSONB)  │                  │ • prefs  │                     
+└──────┬───┘                  │ (JSONB)  │                 
        │                      └────┬─────┘
        │           1:N             │ 1:N
        │                           │
        │    ┌──────────────────────┘
        │    ▼
-       │  ┌──────────────┐
+       │  ┌───────────────┐
        └─►│ ride_reviews  │
           │ • rating (1-5)│   ──► TRIGGER: update_driver_rating()
           │ • comment     │       Auto-recalculates avg rating
           │ UNIQUE(ride,  │
           │  reviewer)    │
-          └──────────────┘
+          └───────────────┘
 ```
 
 ### Row-Level Security (RLS) Policy Matrix
