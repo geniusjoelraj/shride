@@ -23,7 +23,7 @@
       "package": "com.tadano_tensai.demo",
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyC-MoKyjxcX653aXuBIUh1EGhW0-uGiAYE"
+          "apiKey": "YOUR_API_KEY"
         }
       },
       "permissions": [
