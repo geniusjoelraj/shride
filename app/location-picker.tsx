@@ -3,7 +3,7 @@ import { Location } from '@/types'
 import { Ionicons } from '@expo/vector-icons'
 import * as ExpoLocation from 'expo-location'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import React, { useRef, useState } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import {
     ActivityIndicator,
     Alert,
@@ -21,8 +21,9 @@ interface SearchResult {
     id: string
     name: string
     address: string
-    latitude: number
-    longitude: number
+    latitude?: number
+    longitude?: number
+    place_id?: string
 }
 
 export default function LocationPicker() {
@@ -36,6 +37,7 @@ export default function LocationPicker() {
     const [loading, setLoading] = useState(false)
     const [searching, setSearching] = useState(false)
     const [selectedLocation, setSelectedLocation] = useState<Location | null>(null)
+    const [hasPermission, setHasPermission] = useState<boolean>(false)
     const [region, setRegion] = useState<Region>({
         latitude: 13.0827,
         longitude: 80.2707,
@@ -45,61 +47,52 @@ export default function LocationPicker() {
 
     const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-    // Search using expo-location geocoding (free, no API key needed)
+    useEffect(() => {
+        (async () => {
+            const { status: existingStatus } = await ExpoLocation.getForegroundPermissionsAsync()
+            if (existingStatus !== 'granted') {
+                const { status } = await ExpoLocation.requestForegroundPermissionsAsync()
+                setHasPermission(status === 'granted')
+            } else {
+                setHasPermission(true)
+            }
+        })()
+    }, [])
+
+    // Search using Google Places Autocomplete API
     const searchPlaces = async (text: string) => {
         if (text.length < 3) {
             setResults([])
-            return
+            return []
         }
 
         setSearching(true)
         try {
-            // Search with the text as-is and biased variants for better results
-            const queries = [
-                text,
-                `${text}, Chennai, India`,
-                `${text}, Tamil Nadu, India`,
-            ]
-
-            const allResults: SearchResult[] = []
-            const seen = new Set<string>()
-
-            for (const q of queries) {
-                try {
-                    const geocoded = await ExpoLocation.geocodeAsync(q)
-                    for (const result of geocoded) {
-                        const key = `${result.latitude.toFixed(4)}_${result.longitude.toFixed(4)}`
-                        if (seen.has(key)) continue
-                        seen.add(key)
-
-                        // Reverse geocode to get the address
-                        const addresses = await ExpoLocation.reverseGeocodeAsync({
-                            latitude: result.latitude,
-                            longitude: result.longitude,
-                        })
-
-                        if (addresses.length > 0) {
-                            const a = addresses[0]
-                            const parts = [a.name, a.street, a.district, a.city, a.region].filter(Boolean)
-                            const address = parts.join(', ')
-                            allResults.push({
-                                id: key,
-                                name: a.name || a.street || text,
-                                address,
-                                latitude: result.latitude,
-                                longitude: result.longitude,
-                            })
-                        }
-                    }
-                } catch {
-                    // Ignore individual query failures
-                }
+            const apiKey = process.env.EXPO_PUBLIC_MAPS_API_KEY
+            if (!apiKey) {
+                console.warn('Maps API key not found')
+                return []
             }
 
-            setResults(allResults.slice(0, 5))
-            return allResults.slice(0, 5)
+            const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&location=${region.latitude},${region.longitude}&radius=500&key=${apiKey}&components=country:in`
+            const res = await fetch(url)
+            const data = await res.json()
+
+            if (data.status === 'OK' && data.predictions) {
+                const mappedResults: SearchResult[] = data.predictions.map((p: any) => ({
+                    id: p.place_id,
+                    place_id: p.place_id,
+                    name: p.structured_formatting?.main_text || p.description,
+                    address: p.structured_formatting?.secondary_text || p.description,
+                }))
+                setResults(mappedResults)
+                return mappedResults
+            }
+            
+            setResults([])
+            return []
         } catch (error) {
-            console.error('Search error:', error)
+            console.log('Search error:', error)
             return []
         } finally {
             setSearching(false)
@@ -126,20 +119,47 @@ export default function LocationPicker() {
     }
 
     // Select a search result
-    const selectResult = (result: SearchResult) => {
+    const selectResult = async (result: SearchResult) => {
         Keyboard.dismiss()
         setResults([])
+        
+        let lat = result.latitude
+        let lng = result.longitude
+
+        // Fetch coordinates if we only have a place_id
+        if (result.place_id && (lat === undefined || lng === undefined)) {
+            setLoading(true)
+            try {
+                const apiKey = process.env.EXPO_PUBLIC_MAPS_API_KEY
+                const url = `https://maps.googleapis.com/maps/api/geocode/json?place_id=${result.place_id}&key=${apiKey}`
+                const res = await fetch(url)
+                const data = await res.json()
+                if (data.status === 'OK' && data.results.length > 0) {
+                    lat = data.results[0].geometry.location.lat
+                    lng = data.results[0].geometry.location.lng
+                }
+            } catch (err) {
+                console.log('Error fetching place details:', err)
+            }
+            setLoading(false)
+        }
+
+        if (lat === undefined || lng === undefined) {
+            Alert.alert('Error', 'Could not get location coordinates.')
+            return
+        }
+
         const loc: Location = {
-            name: result.address || result.name,
-            latitude: result.latitude,
-            longitude: result.longitude,
-            address: result.address,
+            name: result.address ? `${result.name}, ${result.address}` : result.name,
+            latitude: lat,
+            longitude: lng,
+            address: result.address ? `${result.name}, ${result.address}` : result.name,
         }
         setSelectedLocation(loc)
-        setQuery(result.address)
+        setQuery(result.name)
         const newRegion = {
-            latitude: result.latitude,
-            longitude: result.longitude,
+            latitude: lat,
+            longitude: lng,
             latitudeDelta: 0.01,
             longitudeDelta: 0.01,
         }
@@ -152,31 +172,30 @@ export default function LocationPicker() {
     // Reverse geocode from coordinates
     const reverseGeocode = async (lat: number, lng: number) => {
         try {
-            const addresses = await ExpoLocation.reverseGeocodeAsync({
-                latitude: lat,
-                longitude: lng,
-            })
-            if (addresses.length > 0) {
-                const a = addresses[0]
-                const parts = [a.name, a.street, a.district, a.city, a.region].filter(Boolean)
-                const address = parts.join(', ')
+            const apiKey = process.env.EXPO_PUBLIC_MAPS_API_KEY
+            if (!apiKey) throw new Error('No API key')
+
+            const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`
+            const res = await fetch(url)
+            const data = await res.json()
+
+            if (data.status === 'OK' && data.results.length > 0) {
+                const address = data.results[0].formatted_address
+                // Use the first part of the formatted address as the short name, or the first component
+                const name = address.split(',')[0]
+                
                 const loc: Location = {
-                    name: address || 'Selected Location',
+                    name: name || 'Selected Location',
                     latitude: lat,
                     longitude: lng,
                     address: address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
                 }
                 setSelectedLocation(loc)
             } else {
-                setSelectedLocation({
-                    name: 'Selected Location',
-                    latitude: lat,
-                    longitude: lng,
-                    address: `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
-                })
+                throw new Error('No results from Google Geocoding')
             }
         } catch (error) {
-            console.error('Reverse geocode error:', error)
+            console.log('Reverse geocode error:', error)
             setSelectedLocation({
                 name: 'Selected Location',
                 latitude: lat,
@@ -211,15 +230,28 @@ export default function LocationPicker() {
             mapRef.current?.animateToRegion(newRegion, 500)
             await reverseGeocode(latitude, longitude)
         } catch (error) {
-            console.error('Current location error:', error)
+            console.log('Current location error:', error)
             Alert.alert('Error', 'Failed to get current location')
         }
         setLoading(false)
     }
 
     // Handle region change (drag map)
-    const handleRegionChangeComplete = (newRegion: Region) => {
+    const handleRegionChangeComplete = (newRegion: Region, details?: any) => {
         setRegion(newRegion)
+
+        // Prevent overwriting a location selected from autocomplete when the map programmatically animates to it
+        if (details && details.isGesture === false) return
+
+        // Fallback: Check if the new region is practically identical to the explicitly selected location
+        if (selectedLocation) {
+            const dLat = Math.abs(newRegion.latitude - selectedLocation.latitude)
+            const dLng = Math.abs(newRegion.longitude - selectedLocation.longitude)
+            if (dLat < 0.00005 && dLng < 0.00005) {
+                return
+            }
+        }
+
         if (geocodeTimeout) clearTimeout(geocodeTimeout)
         geocodeTimeout = setTimeout(() => {
             reverseGeocode(newRegion.latitude, newRegion.longitude)

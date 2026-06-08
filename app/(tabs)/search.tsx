@@ -24,6 +24,22 @@ const PREFERENCE_ICONS: Record<string, { name: string; set: 'ionicons' | 'materi
   luggage_ok: { name: 'bag-handle', set: 'ionicons', label: 'Luggage' },
 }
 
+// Haversine distance in meters between two lat/lng points
+const haversineMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371000
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// ~500m expressed as degrees (slightly oversized for bounding-box pre-filter)
+const RADIUS_METERS = 500
+const DEG_OFFSET = 0.006 // ~660m, a bit larger than 500m to cover corners
+
 export default function Search() {
   const router = useRouter()
   const { user } = useAuth()
@@ -48,31 +64,26 @@ export default function Search() {
   const fetchRides = useCallback(async () => {
     setLoading(true)
     try {
+      // Build base query — fetch future regular rides OR any recurring ride
       let query = supabase
         .from('rides')
         .select('*, driver:profiles!driver_id(*)')
         .eq('status', 'open')
         .gt('available_seats', 0)
-        .gte('departure_time', new Date().toISOString())
+        .or(`departure_time.gte.${new Date().toISOString()},is_recurring.eq.true`)
         .order('departure_time', { ascending: true })
 
       if (user) {
         query = query.neq('driver_id', user.id)
       }
 
+      // We fetch all potential rides and filter them client-side against their full route_geom trajectories
+
       if (genderFilter !== 'all') {
         query = query.eq('gender_preference', genderFilter)
       }
 
-      if (filterDate) {
-        const startOfDay = new Date(filterDate)
-        startOfDay.setHours(0, 0, 0, 0)
-        const endOfDay = new Date(filterDate)
-        endOfDay.setHours(23, 59, 59, 999)
-        query = query
-          .gte('departure_time', startOfDay.toISOString())
-          .lte('departure_time', endOfDay.toISOString())
-      }
+
 
       if (Object.keys(prefsFilter).length > 0) {
         query = query.contains('preferences', prefsFilter as Record<string, boolean>)
@@ -82,14 +93,107 @@ export default function Search() {
 
       if (error) {
         console.error('Error fetching rides:', error)
-      } else {
-        setRides((data as Ride[]) || [])
+        setRides([])
+        setLoading(false)
+        return
       }
+
+      let results = (data as Ride[]) || []
+
+      // Client-side date filtering (to handle recurring rides properly)
+      const targetDate = filterDate || new Date()
+      const targetDay = targetDate.getDay()
+      const startOfDay = new Date(targetDate)
+      startOfDay.setHours(0, 0, 0, 0)
+      const endOfDay = new Date(targetDate)
+      endOfDay.setHours(23, 59, 59, 999)
+
+      results = results.filter(ride => {
+        if (ride.is_recurring) {
+          // Check if this recurring ride operates on the target day of the week
+          if (!ride.recurring_days || !ride.recurring_days.includes(targetDay)) return false
+          
+          // Check if the time has already passed for the target date
+          const rideTime = new Date(ride.departure_time)
+          const scheduledTimeForTarget = new Date(targetDate)
+          scheduledTimeForTarget.setHours(rideTime.getHours(), rideTime.getMinutes(), 0, 0)
+          
+          if (scheduledTimeForTarget < new Date()) {
+            return false
+          }
+          return true
+        } else {
+          // Normal ride logic
+          if (filterDate) {
+            const rideDate = new Date(ride.departure_time)
+            return rideDate >= startOfDay && rideDate <= endOfDay
+          }
+          return true // If no filter date, the DB query already filtered for >= now
+        }
+      })
+
+      // If locations are set, do precise 500m Haversine filtering along the route geometry
+      if (source && destination && results.length > 0) {
+        const matchingRides = []
+
+        for (const ride of results) {
+            let pickupDist = Infinity
+            let dropDist = Infinity
+            let pickupIdx = -1
+            let dropIdx = -1
+
+            // 1. Check points along the route trajectory
+            if (ride.route_geom && Array.isArray((ride.route_geom as any).coordinates)) {
+                const coords = (ride.route_geom as any).coordinates // Array of [lng, lat]
+                
+                // Find closest point to passenger's pickup
+                for (let i = 0; i < coords.length; i++) {
+                    const [lng, lat] = coords[i]
+                    const dist = haversineMeters(source.latitude, source.longitude, lat, lng)
+                    if (dist < pickupDist) {
+                        pickupDist = dist
+                        pickupIdx = i
+                    }
+                }
+
+                // If pickup is viable, search for dropoff AFTER the pickup point
+                if (pickupDist <= RADIUS_METERS) {
+                    for (let i = pickupIdx; i < coords.length; i++) {
+                        const [lng, lat] = coords[i]
+                        const dist = haversineMeters(destination.latitude, destination.longitude, lat, lng)
+                        if (dist < dropDist) {
+                            dropDist = dist
+                            dropIdx = i
+                        }
+                    }
+                }
+            }
+
+            // 2. Fallback for rides without geometry (e.g. legacy test data)
+            if (pickupIdx === -1 || dropIdx === -1 || pickupDist > RADIUS_METERS || dropDist > RADIUS_METERS) {
+                pickupDist = haversineMeters(source.latitude, source.longitude, ride.source_lat, ride.source_lng)
+                dropDist = haversineMeters(destination.latitude, destination.longitude, ride.dest_lat, ride.dest_lng)
+                if (pickupDist <= RADIUS_METERS && dropDist <= RADIUS_METERS) {
+                    pickupIdx = 0
+                    dropIdx = 1
+                }
+            }
+
+            // If both points are within radius and pickup happens before dropoff
+            if (pickupDist <= RADIUS_METERS && dropDist <= RADIUS_METERS && pickupIdx <= dropIdx) {
+                matchingRides.push({ ...ride, pickupDist, dropDist })
+            }
+        }
+        
+        results = matchingRides.sort((a, b) => (a.pickupDist + a.dropDist) - (b.pickupDist + b.dropDist))
+      }
+
+      setRides(results)
     } catch (err) {
       console.error('Error:', err)
     }
     setLoading(false)
-  }, [genderFilter, filterDate, prefsFilter, user])
+  }, [source, destination, genderFilter, filterDate, prefsFilter, user])
 
   useEffect(() => {
     fetchRides()
@@ -101,13 +205,19 @@ export default function Search() {
     setRefreshing(false)
   }
 
-  const formatDepartureTime = (time: string) => {
-    const date = new Date(time)
+  const formatDepartureTime = (ride: Ride) => {
+    const timeStr = new Date(ride.departure_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+
+    if (ride.is_recurring) {
+      const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      const daysStr = ride.recurring_days?.map(d => weekdays[d]).join(', ')
+      return `${daysStr} • ${timeStr}`
+    }
+
+    const date = new Date(ride.departure_time)
     const now = new Date()
     const tomorrow = new Date(now)
     tomorrow.setDate(tomorrow.getDate() + 1)
-
-    const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 
     if (date.toDateString() === now.toDateString()) {
       return `Today, ${timeStr}`
@@ -120,6 +230,8 @@ export default function Search() {
 
   const RideCard = ({ ride }: { ride: Ride }) => {
     const activePrefs = Object.entries(ride.preferences || {}).filter(([, val]) => val)
+    const pickupDist = (ride as any).pickupDist as number | undefined
+    const dropDist = (ride as any).dropDist as number | undefined
 
     return (
       <TouchableOpacity
@@ -179,10 +291,19 @@ export default function Search() {
           <View className="flex-row items-center">
             <Ionicons name="time-outline" size={14} color="#60683D" />
             <Text className="font-body text-xs text-shride-text-secondary ml-1">
-              {formatDepartureTime(ride.departure_time)}
+              {formatDepartureTime(ride)}
             </Text>
           </View>
-          <View className="flex-row items-center">
+          {pickupDist !== undefined && (
+            <View className="flex-row items-center bg-emerald-50 px-2 py-0.5 rounded-full ml-2">
+              <Ionicons name="navigate-outline" size={12} color="#059669" />
+              <Text className="font-body text-xs text-emerald-700 ml-1">
+                {Math.round(pickupDist)}m / {Math.round(dropDist!)}m
+              </Text>
+            </View>
+          )}
+          <View className="flex-1" />
+          <View className="flex-row items-center mr-2">
             <Ionicons name="people-outline" size={14} color="#60683D" />
             <Text className="font-body text-xs text-shride-text-secondary ml-1">
               {ride.available_seats} seats

@@ -66,6 +66,12 @@ export interface Ride {
     vehicle_plate: string
     vehicle_color: string
     status: RideStatus
+    route_geom?: any
+    estimated_duration?: number
+    distance_meters?: number
+    base_price?: number
+    is_recurring?: boolean
+    recurring_days?: number[] | null
     created_at: string
     // Joined fields
     driver?: Profile

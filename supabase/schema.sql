@@ -6,6 +6,9 @@
 -- Enable UUID extension (should already be enabled)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Enable PostGIS for spatial queries
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 -- ==========================================
 -- ENUM TYPES
 -- ==========================================
@@ -68,8 +71,16 @@ CREATE TABLE rides (
   vehicle_plate TEXT NOT NULL DEFAULT '',
   vehicle_color TEXT NOT NULL DEFAULT '',
   status ride_status NOT NULL DEFAULT 'open',
+  route_geom GEOMETRY(LineString, 4326),
+  estimated_duration INTEGER NOT NULL DEFAULT 0,
+  distance_meters INTEGER NOT NULL DEFAULT 0,
+  base_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+  is_recurring BOOLEAN NOT NULL DEFAULT FALSE,
+  recurring_days INTEGER[] DEFAULT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_rides_route_geom ON rides USING GIST (route_geom);
 
 CREATE INDEX idx_rides_driver ON rides(driver_id);
 CREATE INDEX idx_rides_departure ON rides(departure_time);
@@ -148,3 +159,35 @@ CREATE POLICY "Participants can update own status"
 CREATE POLICY "Passengers can leave rides"
   ON ride_passengers FOR DELETE
   USING (auth.uid() = passenger_id);
+
+-- ==========================================
+-- RPC FUNCTIONS
+-- ==========================================
+
+CREATE OR REPLACE FUNCTION public.find_compatible_rides(
+  pickup_lat DOUBLE PRECISION,
+  pickup_lng DOUBLE PRECISION,
+  dropoff_lat DOUBLE PRECISION,
+  dropoff_lng DOUBLE PRECISION,
+  max_distance_meters FLOAT DEFAULT 500
+)
+RETURNS SETOF public.rides AS $$
+DECLARE
+  pickup_point GEOMETRY;
+  dropoff_point GEOMETRY;
+BEGIN
+  pickup_point := ST_SetSRID(ST_MakePoint(pickup_lng, pickup_lat), 4326);
+  dropoff_point := ST_SetSRID(ST_MakePoint(dropoff_lng, dropoff_lat), 4326);
+
+  RETURN QUERY
+  SELECT r.*
+  FROM public.rides r
+  WHERE r.status = 'open'
+  AND r.available_seats > 0
+  AND r.departure_time >= NOW()
+  AND r.route_geom IS NOT NULL
+  AND ST_DWithin(r.route_geom::geography, pickup_point::geography, max_distance_meters)
+  AND ST_DWithin(r.route_geom::geography, dropoff_point::geography, max_distance_meters)
+  AND ST_LineLocatePoint(r.route_geom, pickup_point) <= ST_LineLocatePoint(r.route_geom, dropoff_point);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

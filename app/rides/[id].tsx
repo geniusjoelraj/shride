@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import type { Ride, RidePassenger, RideStatus, UserPreferences } from '@/types'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
+import { StatusBar } from 'expo-status-bar'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import React, { useEffect, useState } from 'react'
 import {
@@ -13,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import MapView, { Marker } from '@/components/Map'
+import MapView, { Marker, Polyline } from '@/components/Map'
 
 const PREFERENCE_ICONS: Record<keyof UserPreferences, { name: string; set: 'ionicons' | 'material'; label: string }> = {
   music: { name: 'musical-notes', set: 'ionicons', label: 'Music' },
@@ -41,6 +42,31 @@ export default function RideDetail() {
   const [actionLoading, setActionLoading] = useState(false)
   const [showRatingModal, setShowRatingModal] = useState(false)
   const [hasReviewed, setHasReviewed] = useState(false)
+  const [liveDuration, setLiveDuration] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (ride && !ride.estimated_duration) {
+      fetchLiveDuration(ride.source_lat, ride.source_lng, ride.dest_lat, ride.dest_lng)
+    } else if (ride) {
+      setLiveDuration(ride.estimated_duration)
+    }
+  }, [ride?.id, ride?.estimated_duration])
+
+  const fetchLiveDuration = async (srcLat: number, srcLng: number, dstLat: number, dstLng: number) => {
+    try {
+      const apiKey = process.env.EXPO_PUBLIC_MAPS_API_KEY
+      if (!apiKey) return
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${srcLat},${srcLng}&destination=${dstLat},${dstLng}&mode=driving&key=${apiKey}`
+      const res = await fetch(url)
+      const data = await res.json()
+      if (data.routes && data.routes.length > 0) {
+        const leg = data.routes[0].legs[0]
+        setLiveDuration(leg.duration.value)
+      }
+    } catch (err) {
+      console.log('Error fetching live duration:', err)
+    }
+  }
 
   const isDriver = ride?.driver_id === user?.id
   const myPassengerEntry = passengers.find((p) => p.passenger_id === user?.id)
@@ -238,6 +264,14 @@ export default function RideDetail() {
     })}, ${date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
   }
 
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return '--'
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    if (h > 0) return `${h}h ${m}m`
+    return `${m}m`
+  }
+
   if (loading) {
     return (
       <View className="flex-1 bg-shride-background items-center justify-center">
@@ -263,8 +297,9 @@ export default function RideDetail() {
 
   return (
     <View className="flex-1 bg-shride-background">
+      <StatusBar style="dark" />
       {/* Map Header */}
-      <View className="h-56">
+      <View className="h-80">
         <MapView
           provider="google"
           style={{ flex: 1 }}
@@ -287,6 +322,26 @@ export default function RideDetail() {
             title="Drop-off"
             pinColor="#AEB784"
           />
+          {ride.route_geom && ride.route_geom.coordinates ? (
+            <Polyline
+              coordinates={ride.route_geom.coordinates.map((p: any) => ({
+                latitude: p[1],
+                longitude: p[0],
+              }))}
+              strokeWidth={4}
+              strokeColor="#41431B"
+            />
+          ) : (
+            <Polyline
+              coordinates={[
+                { latitude: ride.source_lat, longitude: ride.source_lng },
+                { latitude: ride.dest_lat, longitude: ride.dest_lng },
+              ]}
+              strokeWidth={3}
+              strokeColor="#41431B80"
+              lineDashPattern={[10, 8]}
+            />
+          )}
         </MapView>
         <TouchableOpacity
           className="absolute top-14 left-5 bg-shride-surface/90 rounded-full p-2"
@@ -384,6 +439,14 @@ export default function RideDetail() {
               </Text>
             </View>
           </View>
+          {!!liveDuration && (
+            <View className="mt-4 pt-3 border-t border-shride-accent/30 flex-row items-center">
+              <Ionicons name="timer-outline" size={18} color="#60683D" />
+              <Text className="font-body text-sm text-shride-text-secondary ml-2">
+                Estimated Travel Time: <Text className="font-semibold text-shride-primary">{formatDuration(liveDuration)}</Text>
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Time, Price, Seats */}
