@@ -42,7 +42,7 @@ The system further implements a **true cost-sharing economic model** (not for-pr
 
 ## Research Motivation
 
-Ride-pooling (also known as dynamic carpooling) has been identified as a key strategy for reducing urban vehicle-kilometers traveled (VKT) and per-capita emissions [(Shaheen & Cohen, 2019)](#references). However, existing commercial platforms face two fundamental limitations:
+Ride-pooling (also known as dynamic carpooling) has been identified as a key strategy for reducing urban vehicle-kilometers traveled (VKT) and per-capita emissions. However, existing commercial platforms face two fundamental limitations:
 
 1. **Naïve spatial matching:** Most systems match riders based on origin–destination point proximity, ignoring the driver's actual travel trajectory. This leads to inefficient detours and poor user experience.
 2. **Profit-driven economics:** Ride-hailing platforms extract significant commissions (20–30%), discouraging true cost-sharing behavior.
