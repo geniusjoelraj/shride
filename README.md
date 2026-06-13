@@ -6,8 +6,6 @@
 [![Expo SDK](https://img.shields.io/badge/Expo_SDK-54-000020?logo=expo)](https://expo.dev)
 [![PostGIS](https://img.shields.io/badge/PostGIS-Spatial_DB-336791?logo=postgresql)](https://postgis.net)
 [![Supabase](https://img.shields.io/badge/Supabase-Backend-3ECF8E?logo=supabase)](https://supabase.com)
-[![License](https://img.shields.io/badge/License-Research-orange)]()
-
 ---
 
 ## Abstract
